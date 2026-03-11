@@ -1,0 +1,81 @@
+import { getPartnersQuerySchemaExtended } from "@/lib/zod/schemas/partners";
+import { prisma, sanitizeFullTextSearch } from "@dub/prisma";
+import { toCentsNumber } from "@dub/utils";
+import * as z from "zod/v4";
+
+type PartnerFilters = z.infer<typeof getPartnersQuerySchemaExtended> & {
+  programId: string;
+};
+
+export async function getPartners(filters: PartnerFilters) {
+  const {
+    status,
+    country,
+    search,
+    email,
+    tenantId,
+    partnerIds,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+    programId,
+    groupId,
+  } = filters;
+
+  const partners = await prisma.programEnrollment.findMany({
+    where: {
+      tenantId,
+      programId,
+      ...(partnerIds && {
+        partnerId: {
+          in: partnerIds,
+        },
+      }),
+      status,
+      groupId,
+      ...(country || search || email
+        ? {
+            partner: {
+              country,
+              ...(email
+                ? { email }
+                : search
+                  ? search.includes("@")
+                    ? { email: search }
+                    : {
+                        email: { search: sanitizeFullTextSearch(search) },
+                        name: { search: sanitizeFullTextSearch(search) },
+                        companyName: { search: sanitizeFullTextSearch(search) },
+                      }
+                  : {}),
+            },
+          }
+        : {}),
+    },
+    include: {
+      partner: {
+        include: {
+          platforms: true,
+        },
+      },
+      links: true,
+    },
+    take: pageSize,
+    skip: (page - 1) * pageSize,
+    orderBy: {
+      [sortBy]: sortOrder,
+    },
+  });
+
+  return partners.map(({ partner, links, ...programEnrollment }) => ({
+    ...partner,
+    ...programEnrollment,
+    id: partner.id,
+    createdAt: new Date(programEnrollment.createdAt),
+    links,
+    netRevenue:
+      toCentsNumber(programEnrollment.totalSaleAmount ?? 0) -
+      toCentsNumber(programEnrollment.totalCommissions ?? 0),
+  }));
+}
