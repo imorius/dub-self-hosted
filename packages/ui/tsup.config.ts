@@ -13,8 +13,9 @@ export default defineConfig((options: Options) => ({
       js: '"use client"',
     };
   },
-  dts: true,
+  dts: false,
   minify: true,
   external: ["react"],
+  
   ...options,
 }));
